@@ -4,6 +4,9 @@ export enum Team {
   K = 'Team K',
   B = 'Team B',
   Four = 'Team 4',
+  SKE = 'SKE48',
+  NMB = 'NMB48',
+  HKT = 'HKT48',
   Graduate = '毕业生'
 }
 
@@ -14,7 +17,7 @@ export interface Stats {
   popularity: number;
   stamina: number;
   mood: number;
-  love: number; // 运营爱
+  love: number;
   exposure: number;
 }
 
@@ -30,10 +33,12 @@ export interface GameState {
     team: Team;
     role: string;
     stats: Stats;
-    currentRank: number | string;
+    currentRank: string; // Center, 神七, 选拔组, 圈内, 圈外
+    numericalRank: number;
     centerCount: number;
     hasScandal: boolean;
     isKenmin: boolean; // 兼任
+    currentSingleStatus: 'None' | 'Senbatsu' | 'Center';
   };
   members: Member[];
   time: {
@@ -43,7 +48,8 @@ export interface GameState {
   actionsRemaining: number;
   logs: LogEntry[];
   isGameOver: boolean;
-  gameStatus: 'start' | 'playing' | 'event' | 'ended';
+  gameStatus: 'start' | 'playing' | 'event' | 'janken' | 'ended';
+  jankenWinner: boolean;
 }
 
 export interface LogEntry {

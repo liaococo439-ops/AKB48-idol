@@ -2,9 +2,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameState } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
+// 严格按照文档使用 process.env.API_KEY
 export const generateEventNarrative = async (state: GameState, eventType: string) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   const prompt = `
     你现在是 AKB48 运营委员会。
     当前时间：第 ${state.time.year} 年 第 ${state.time.quarter} 季度。
@@ -37,9 +38,9 @@ export const generateEventNarrative = async (state: GameState, eventType: string
       }
     });
 
-    return JSON.parse(response.text);
+    return JSON.parse(response.text || '{"title": "系统公告", "description": "发生了意料之外的事情..."}');
   } catch (error) {
     console.error("Gemini narrative failed", error);
-    return { title: "系统公告", description: "发生了一些意料之外的变化..." };
+    return { title: "系统公告", description: "运营内部正在商讨重要事项，请稍后再试。" };
   }
 };

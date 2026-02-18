@@ -5,7 +5,7 @@ import { INITIAL_STATS, TEAMS, REAL_MEMBERS, SISTER_GROUPS } from './constants';
 import { generateEventNarrative } from './services/gemini';
 import { 
   Users, Music, Tv, Briefcase, Heart, Coffee, 
-  ArrowRight, ShieldAlert, Trophy, GraduationCap 
+  ArrowRight, ShieldAlert, Trophy, GraduationCap, Star, Zap
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -16,9 +16,11 @@ const App: React.FC = () => {
       role: "正式成员",
       stats: { ...INITIAL_STATS },
       currentRank: "圏外",
+      numericalRank: 0,
       centerCount: 0,
       hasScandal: false,
       isKenmin: false,
+      currentSingleStatus: 'None',
     },
     members: [],
     time: { year: 1, quarter: 1 },
@@ -26,6 +28,7 @@ const App: React.FC = () => {
     logs: [],
     isGameOver: false,
     gameStatus: 'start',
+    jankenWinner: false,
   });
 
   const [overlay, setOverlay] = useState<{ title: string; description: string } | null>(null);
@@ -49,9 +52,9 @@ const App: React.FC = () => {
   const startGame = () => {
     const randomTeam = TEAMS[Math.floor(Math.random() * TEAMS.length)];
     const shuffled = [...REAL_MEMBERS].sort(() => 0.5 - Math.random());
-    const initialMembers: Member[] = shuffled.slice(0, 3).map(name => ({
+    const initialMembers: Member[] = shuffled.slice(0, 5).map(name => ({
       name,
-      bond: Math.floor(Math.random() * 20) + 15,
+      bond: Math.floor(Math.random() * 20) + 10,
       isCP: false
     }));
 
@@ -60,17 +63,12 @@ const App: React.FC = () => {
       player: {
         ...prev.player,
         team: randomTeam,
-        stats: {
-          ...INITIAL_STATS,
-          visual: Math.floor(Math.random() * 30) + 40,
-          performance: Math.floor(Math.random() * 30) + 35,
-          popularity: Math.floor(Math.random() * 100) + 200,
-        }
+        stats: { ...INITIAL_STATS }
       },
       members: initialMembers,
       gameStatus: 'playing'
     }));
-    addLog("系统", `欢迎加入AKB48 Group！你被分配到了 ${randomTeam}。努力开启你的偶像生涯吧！`, "text-blue-600");
+    addLog("系统", `加入AKB48！分属于 ${randomTeam}。属于你的篇章开始了。`, "text-blue-600");
   };
 
   const doAction = (type: 'lesson' | 'variety' | 'work' | 'bond' | 'rest') => {
@@ -83,38 +81,40 @@ const App: React.FC = () => {
       let logMsg = "";
       let logTag = "";
 
+      if (newStats.stamina < 15 * costMultiplier && type !== 'rest') {
+        alert("体力不足，请休息！");
+        return prev;
+      }
+
       switch(type) {
         case 'lesson':
-          if (newStats.stamina < 20 * costMultiplier) return prev;
           newStats.performance += 6;
           newStats.popularity += 100;
           newStats.stamina -= 20 * costMultiplier;
-          logTag = "剧场"; logMsg = "努力成为剧场女神，汗水打湿了练习室的地面。";
+          logTag = "训练"; logMsg = "在剧场练习室挥洒汗水。";
           break;
         case 'variety':
-          if (newStats.stamina < 15 * costMultiplier) return prev;
           newStats.variety += 7;
           newStats.love += 4;
           newStats.stamina -= 15 * costMultiplier;
-          logTag = "综艺"; logMsg = "录制《AKBINGO!》，你的综艺感让工作人员印象深刻。";
+          logTag = "综艺"; logMsg = "参与节目收录，表现亮眼。";
           break;
         case 'work':
-          if (newStats.stamina < 20 * costMultiplier) return prev;
-          newStats.popularity += 150;
-          newStats.exposure += 15;
+          newStats.popularity += 180;
+          newStats.exposure += 12;
           newStats.stamina -= 20 * costMultiplier;
-          logTag = "外务"; logMsg = "全国握手会爆满，你极佳的对应能力圈粉无数。";
+          logTag = "外务"; logMsg = "大型握手会，对应力MAX。";
           break;
         case 'bond':
           const members = [...prev.members];
           const targetIndex = Math.floor(Math.random() * members.length);
           members[targetIndex].bond += 15;
           newStats.mood = Math.min(100, newStats.mood + 10);
-          logTag = "社交"; logMsg = `和 ${members[targetIndex].name} 一起去吃了下午茶，心情变好了。`;
-          if (members[targetIndex].bond >= 80 && !members[targetIndex].isCP) {
+          logTag = "社交"; logMsg = `与 ${members[targetIndex].name} 深度交流。`;
+          if (members[targetIndex].bond >= 85 && !members[targetIndex].isCP) {
               members[targetIndex].isCP = true;
-              newStats.popularity += 300;
-              logMsg = `你与 ${members[targetIndex].name} 正式组成了官方CP，引发了粉丝热烈讨论！`;
+              newStats.popularity += 150; // CP对人气有一定提升但不过大
+              logMsg = `你与 ${members[targetIndex].name} 组成了官方CP！`;
           }
           return {
             ...prev,
@@ -123,10 +123,9 @@ const App: React.FC = () => {
             actionsRemaining: prev.actionsRemaining - 1
           };
         case 'rest':
-          newStats.stamina = Math.min(100, newStats.stamina + 50);
-          newStats.mood = Math.min(100, newStats.mood + 20);
-          newStats.popularity -= 20;
-          logTag = "假期"; logMsg = "在家中彻底放松，充好了电。";
+          newStats.stamina = Math.min(100, newStats.stamina + 60);
+          newStats.mood = Math.min(100, newStats.mood + 25);
+          logTag = "休息"; logMsg = "充足的睡眠是偶像的本钱。";
           break;
       }
 
@@ -142,17 +141,41 @@ const App: React.FC = () => {
   const nextQuarter = async () => {
     setIsLoading(true);
     const p = state.player;
+    const y = state.time.year;
     const q = state.time.quarter;
+    
     let eventType = "日常运营";
+    let summary = "";
 
-    if (Math.random() < 0.08) eventType = "文春炮爆料";
-    else if (q === 2) eventType = "总选举开票";
-    else if (q === 4) eventType = "组阁祭与升格";
+    // 1. 单曲选拔逻辑
+    const calcSingleSelection = (weights: { pop: number; love: number; perf: number }) => {
+      const score = (p.stats.popularity / 100) * weights.pop + p.stats.love * weights.love + p.stats.performance * weights.perf;
+      if (score > 70) return 'Center';
+      if (score > 50) return 'Senbatsu';
+      return 'None';
+    };
+
+    if (q === 1) {
+      const status = calcSingleSelection({ pop: 0.3, love: 0.5, perf: 0.2 });
+      eventType = "樱花单选拔";
+      summary = status === 'Center' ? "你成为了樱花单Center！" : (status === 'Senbatsu' ? "你入选了樱花单选拔！" : "你落选了樱花单选拔。");
+      state.player.currentSingleStatus = status;
+    } else if (q === 2) {
+      const status = calcSingleSelection({ pop: 0.5, love: 0.3, perf: 0.2 });
+      eventType = "夏日单选拔";
+      summary = status === 'Center' ? "你成为了夏日单Center！" : (status === 'Senbatsu' ? "你入选了夏日单选拔！" : "你落选了。");
+      state.player.currentSingleStatus = status;
+    } else if (q === 3) {
+      eventType = "总选举开票";
+      if (y % 2 === 0) eventType = "总选举与猜拳大会";
+    } else if (q === 4) {
+      eventType = "年终盛典(RH100/组阁/红白)";
+    }
 
     const narrative = await generateEventNarrative(state, eventType);
-    setOverlay(narrative);
+    setOverlay({ title: narrative.title, description: (summary ? summary + "\n\n" : "") + narrative.description });
 
-    // Update logic based on event
+    // 2. 状态更新逻辑
     setState(prev => {
       let nextQ = prev.time.quarter + 1;
       let nextY = prev.time.year;
@@ -161,31 +184,70 @@ const App: React.FC = () => {
         nextY += 1;
       }
 
-      const p = prev.player;
-      let newRank = p.currentRank;
-      let newStats = { ...p.stats };
-      let newTeam = p.team;
+      const player = { ...prev.player };
+      let newStats = { ...player.stats };
       let isGameOver = prev.isGameOver;
 
-      if (eventType === "总选举开票") {
-        const rank = Math.max(1, 301 - Math.floor(newStats.popularity / 25));
-        newRank = rank <= 100 ? rank : "圏外";
-        if (rank === 1) p.centerCount++;
+      // 总选举排名逻辑
+      if (q === 2) {
+        const pop = player.stats.popularity;
+        if (pop > 8000) { player.currentRank = "Center"; player.centerCount++; }
+        else if (pop > 6000) player.currentRank = "神七";
+        else if (pop > 4000) player.currentRank = "选拔组";
+        else if (pop > 2000) player.currentRank = "圈内";
+        else player.currentRank = "圈外";
       }
 
-      if (eventType === "文春炮爆料") {
-        newStats.popularity = Math.max(0, newStats.popularity - 1500);
-        newStats.love = 0;
-        newStats.mood -= 40;
+      // 猜拳逻辑 (两年一度 Q3 判定)
+      if (q === 3 && nextY % 2 === 0) {
+        const win = Math.random() > 0.9; // 10% 几率赢
+        if (win) {
+          player.centerCount++;
+          player.currentSingleStatus = 'Center';
+          const effect = (newStats.visual + newStats.performance + newStats.popularity / 100) / 3;
+          if (effect > 60) {
+            newStats.popularity += 2000;
+            addLog("猜拳", "凭借强运和过人素质，你的猜拳单曲大爆！", "text-yellow-500");
+          } else {
+            newStats.popularity -= 500;
+            addLog("猜拳", "虽然赢了猜拳，但素质不足引发了德不配位的争议。", "text-red-500");
+          }
+        }
       }
 
-      if (nextY > 8 || newStats.stamina <= 0 || newStats.mood <= 0) {
-        isGameOver = true;
+      // 组阁与红白 (Q4)
+      if (q === 4) {
+        // RH100
+        if (player.stats.popularity > 3000) {
+          newStats.popularity += 500;
+          addLog("RH100", "你的曲目进入了TOP100，获得了表演机会！", "text-green-500");
+        }
+        
+        // 组阁祭
+        if (Math.random() < 0.15) {
+          if (newStats.performance > 80 && newStats.love > 70 && !player.isKenmin) {
+            player.isKenmin = true;
+            addLog("组阁", "你被任命为兼任成员，活动范围扩大了！", "text-purple-600");
+          } else {
+            const sister = SISTER_GROUPS[Math.floor(Math.random() * SISTER_GROUPS.length)];
+            player.team = sister as any;
+            addLog("组阁", `你被移籍到了 ${sister}，开始新的征程。`, "text-orange-600");
+          }
+        }
+
+        // 红白选拔
+        if (player.stats.love > 60 || player.stats.popularity > 5000) {
+          newStats.exposure += 30;
+          newStats.popularity += 1000;
+          addLog("红白", "你入选了NHK红白歌合战，国民度大增！", "text-red-600");
+        }
       }
+
+      if (nextY > 10 || newStats.stamina <= -20) isGameOver = true;
 
       return {
         ...prev,
-        player: { ...p, stats: newStats, currentRank: newRank, team: newTeam },
+        player,
         time: { year: nextY, quarter: nextQ },
         actionsRemaining: 3,
         isGameOver,
@@ -196,169 +258,183 @@ const App: React.FC = () => {
     setIsLoading(false);
   };
 
-  const closeOverlay = () => {
-    setOverlay(null);
-    if (state.isGameOver) {
-      setState(prev => ({ ...prev, gameStatus: 'ended' }));
-    }
-  };
-
   if (state.gameStatus === 'start') {
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-pink-500 to-rose-600 flex flex-col items-center justify-center text-white p-6 text-center">
-        <h1 className="text-5xl font-bold mb-4 drop-shadow-lg">AKB48 GENERATION</h1>
-        <p className="text-xl mb-8 opacity-90 italic">“梦想、汗水、以及无处不在的文春”</p>
-        <button 
-          onClick={startGame}
-          className="bg-white text-rose-600 px-10 py-4 rounded-full text-xl font-bold shadow-2xl hover:scale-105 transition-transform"
-        >
-          开始偶像生涯
-        </button>
+        <h1 className="text-6xl font-black mb-4 drop-shadow-2xl">AKB48 终极养成 v8.5</h1>
+        <p className="text-xl mb-12 opacity-80 tracking-widest italic">“梦想在远方，汗水在脚下”</p>
+        <div className="space-y-4">
+          <button 
+            onClick={startGame}
+            className="bg-white text-rose-600 px-12 py-5 rounded-full text-2xl font-bold shadow-[0_10px_0_0_#be123c] active:translate-y-1 active:shadow-none transition-all"
+          >
+            开启偶像篇章
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen max-w-6xl mx-auto flex flex-col bg-white shadow-xl">
-      {/* Overlay for events */}
+    <div className="min-h-screen max-w-7xl mx-auto flex flex-col bg-white shadow-2xl overflow-hidden">
       {overlay && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
-          <div className="bg-white rounded-2xl p-8 max-w-2xl w-full text-center">
-            <h2 className="text-3xl font-bold text-pink-600 mb-4">{overlay.title}</h2>
-            <p className="text-gray-700 text-lg leading-relaxed mb-8 whitespace-pre-wrap">{overlay.description}</p>
+        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-10 max-w-3xl w-full border-4 border-pink-500 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10"><Star size={120} /></div>
+            <h2 className="text-4xl font-black text-pink-600 mb-6 flex items-center gap-3">
+              <Zap className="fill-pink-600" /> {overlay.title}
+            </h2>
+            <p className="text-gray-700 text-xl leading-relaxed mb-10 whitespace-pre-wrap font-medium">{overlay.description}</p>
             <button 
-              onClick={closeOverlay}
-              className="bg-pink-600 text-white px-8 py-3 rounded-full font-bold hover:bg-pink-700 transition"
+              onClick={() => setOverlay(null)}
+              className="w-full bg-pink-600 text-white py-5 rounded-2xl text-2xl font-bold hover:bg-pink-700 shadow-xl"
             >
-              确 认
+              确 定
             </button>
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <header className="bg-pink-600 text-white p-4 flex justify-between items-center shrink-0">
-        <h2 className="text-lg font-bold">第 {state.time.year} 年 · 第 {state.time.quarter} 季度</h2>
-        <div className="flex gap-4 text-sm font-medium">
-          <span>{state.player.team}</span>
-          <span className="bg-white/20 px-2 rounded">中心位: {state.player.centerCount}</span>
+      {/* Header Info */}
+      <header className="bg-gradient-to-r from-pink-600 to-rose-500 text-white p-5 flex justify-between items-center shadow-lg">
+        <div>
+          <h2 className="text-2xl font-black tracking-tighter">Year {state.time.year} / Q{state.time.quarter}</h2>
+          <div className="text-xs opacity-80 uppercase font-bold">{state.player.team} · {state.player.isKenmin ? '兼任中' : '全职'}</div>
+        </div>
+        <div className="flex gap-6 items-center">
+          <div className="text-right">
+            <div className="text-xs opacity-70">总选排名</div>
+            <div className="text-xl font-black">{state.player.currentRank}</div>
+          </div>
+          <div className="h-10 w-px bg-white/30" />
+          <div className="text-right">
+            <div className="text-xs opacity-70">Center次数</div>
+            <div className="text-xl font-black">{state.player.centerCount}</div>
+          </div>
         </div>
       </header>
 
-      {/* Stats Board */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 p-3 bg-pink-50 border-b border-pink-100">
-        <StatItem label="颜值" value={state.player.stats.visual} />
-        <StatItem label="表现" value={state.player.stats.performance} />
-        <StatItem label="综艺" value={state.player.stats.variety} />
-        <StatItem label="人气" value={state.player.stats.popularity} max={10000} color="bg-orange-400" />
-        <StatItem label="体力" value={state.player.stats.stamina} max={100} color="bg-blue-400" />
-        <StatItem label="心情" value={state.player.stats.mood} max={100} color="bg-green-400" />
-        <StatItem label="运营爱" value={state.player.stats.love} max={100} color="bg-purple-400" />
-        <StatItem label="曝光度" value={state.player.stats.exposure} max={100} color="bg-pink-400" />
+      {/* Stats Bar */}
+      <div className="grid grid-cols-4 md:grid-cols-8 gap-1 p-2 bg-pink-50 border-b-2 border-pink-100">
+        <StatBar label="颜值" value={state.player.stats.visual} color="bg-rose-400" />
+        <StatBar label="表现" value={state.player.stats.performance} color="bg-orange-400" />
+        <StatBar label="综艺" value={state.player.stats.variety} color="bg-amber-400" />
+        <StatBar label="人气" value={state.player.stats.popularity} max={10000} color="bg-pink-500" />
+        <StatBar label="体力" value={state.player.stats.stamina} max={100} color="bg-cyan-500" />
+        <StatBar label="心情" value={state.player.stats.mood} max={100} color="bg-green-500" />
+        <StatBar label="运营爱" value={state.player.stats.love} max={100} color="bg-purple-500" />
+        <StatBar label="曝光" value={state.player.stats.exposure} max={100} color="bg-indigo-500" />
       </div>
 
-      {/* Main Game Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Side: Companion list */}
-        <aside className="w-56 bg-gray-50 p-4 border-r border-gray-200 overflow-y-auto hidden md:block">
-          <h3 className="text-pink-600 font-bold mb-3 flex items-center gap-2">
-            <Users size={18} /> 剧场战友
+        {/* Left: Members & Social */}
+        <aside className="w-64 bg-gray-50 p-6 border-r flex flex-col hidden lg:flex">
+          <h3 className="font-black text-pink-600 mb-4 flex items-center gap-2 text-lg">
+            <Users size={22} /> 核心成员
           </h3>
-          {state.members.map(m => (
-            <div key={m.name} className="bg-white p-3 rounded-lg border border-gray-100 mb-2 shadow-sm">
-              <div className="font-bold text-sm">{m.name}</div>
-              <div className="text-xs text-gray-500 mt-1">羁绊: {m.bond}</div>
-              {m.isCP && <div className="text-[10px] text-pink-500 font-bold mt-1">❤ 官方CP</div>}
-            </div>
-          ))}
-        </aside>
-
-        {/* Center: Log Display */}
-        <main className="flex-1 flex flex-col p-4 overflow-hidden bg-white">
-          <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-            {state.logs.map(log => (
-              <div key={log.id} className="border-b border-pink-50 pb-2 animate-fade-in">
-                <span className={`font-bold text-xs ${log.color}`}>[{log.tag}]</span>
-                <span className="text-sm text-gray-700 ml-2">{log.message}</span>
+          <div className="space-y-3">
+            {state.members.map(m => (
+              <div key={m.name} className="bg-white p-4 rounded-2xl border-2 border-gray-100 shadow-sm">
+                <div className="font-bold flex justify-between items-center">
+                  {m.name} 
+                  {m.isCP && <Heart size={14} className="text-red-500 fill-red-500" />}
+                </div>
+                <div className="text-xs text-gray-400 mt-1">羁绊: {m.bond}</div>
+                <div className="w-full h-1 bg-gray-100 mt-2 rounded-full overflow-hidden">
+                  <div className="h-full bg-pink-400" style={{ width: `${Math.min(100, m.bond)}%` }} />
+                </div>
               </div>
             ))}
-            <div ref={logEndRef} />
+          </div>
+        </aside>
+
+        {/* Center: Logs */}
+        <main className="flex-1 p-6 overflow-y-auto bg-white scroll-smooth">
+          <div className="max-w-3xl mx-auto space-y-4">
+            {state.logs.length === 0 && <div className="text-center py-20 text-gray-300 italic">尚未开始活动...</div>}
+            {state.logs.map(log => (
+              <div key={log.id} className="flex gap-4 p-4 rounded-2xl bg-gray-50 border-l-4 border-pink-400 animate-in slide-in-from-bottom-4 duration-500">
+                <div className="shrink-0 flex items-center justify-center w-12 h-12 bg-white rounded-full shadow-sm text-lg font-bold">
+                  {log.tag[0]}
+                </div>
+                <div>
+                   <div className={`text-xs font-black uppercase tracking-wider ${log.color}`}>{log.tag}</div>
+                   <div className="text-gray-700 mt-1 font-medium">{log.message}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </main>
 
-        {/* Right Side: Actions */}
-        <aside className="w-64 bg-gray-50 p-4 border-l border-gray-200 flex flex-col gap-3">
-          <div className="bg-white rounded-xl p-4 text-center border-2 border-pink-100 mb-2">
-            <div className="text-xs text-gray-400 mb-1">本季行动力</div>
-            <div className="text-3xl font-black text-pink-600">{state.actionsRemaining}</div>
+        {/* Right: Actions */}
+        <aside className="w-80 bg-gray-50 p-6 border-l flex flex-col gap-4">
+          <div className="bg-pink-600 text-white rounded-3xl p-6 shadow-xl mb-4 text-center">
+            <div className="text-sm font-bold opacity-80 mb-1">本季行动力</div>
+            <div className="text-5xl font-black">{state.actionsRemaining}</div>
           </div>
 
-          <ActionButton 
-            onClick={() => doAction('lesson')} 
-            icon={<Music size={18} />} 
-            label="剧场练习" 
-            desc="表现+ 人气+" 
-            disabled={state.actionsRemaining === 0}
-          />
-          <ActionButton 
-            onClick={() => doAction('variety')} 
-            icon={<Tv size={18} />} 
-            label="综艺外务" 
-            desc="综艺+ 运营爱+" 
-            disabled={state.actionsRemaining === 0}
-          />
-          <ActionButton 
-            onClick={() => doAction('work')} 
-            icon={<Briefcase size={18} />} 
-            label="握手会" 
-            desc="人气++ 曝光+" 
-            disabled={state.actionsRemaining === 0}
-          />
-          <ActionButton 
-            onClick={() => doAction('bond')} 
-            icon={<Heart size={18} />} 
-            label="队友交流" 
-            desc="羁绊+ 心情+" 
-            disabled={state.actionsRemaining === 0}
-          />
-          <ActionButton 
-            onClick={() => doAction('rest')} 
-            icon={<Coffee size={18} />} 
-            label="彻底休假" 
-            desc="恢复体力和心情" 
-            disabled={state.actionsRemaining === 0}
-          />
-
-          <div className="mt-auto pt-4 border-t border-gray-200">
-            <button 
-              onClick={nextQuarter}
-              disabled={isLoading || state.actionsRemaining > 0}
-              className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition ${isLoading || state.actionsRemaining > 0 ? 'bg-gray-300 cursor-not-allowed' : 'bg-pink-600 text-white hover:bg-pink-700 shadow-lg'}`}
-            >
-              {isLoading ? '处理中...' : '推进至下一季度'} <ArrowRight size={18} />
-            </button>
-            <div className="text-center mt-3">
-               <div className="text-[10px] text-gray-400 uppercase tracking-widest mb-1">当前预估排名</div>
-               <div className="text-2xl font-black text-pink-600">
-                 {typeof state.player.currentRank === 'number' ? `#${state.player.currentRank}` : state.player.currentRank}
-               </div>
-            </div>
+          <div className="space-y-3">
+            <ActionBtn 
+              onClick={() => doAction('lesson')} 
+              icon={<Music />} 
+              title="剧场 lessons" 
+              sub="表现 & 人气" 
+              disabled={state.actionsRemaining === 0}
+            />
+            <ActionBtn 
+              onClick={() => doAction('variety')} 
+              icon={<Tv />} 
+              title="综艺外务" 
+              sub="综艺 & 运营爱" 
+              disabled={state.actionsRemaining === 0}
+            />
+            <ActionBtn 
+              onClick={() => doAction('work')} 
+              icon={<Briefcase />} 
+              title="全国握手会" 
+              sub="人气 & 曝光" 
+              disabled={state.actionsRemaining === 0}
+            />
+            <ActionBtn 
+              onClick={() => doAction('bond')} 
+              icon={<Heart />} 
+              title="成员私联" 
+              sub="羁绊 & 炒CP" 
+              disabled={state.actionsRemaining === 0}
+            />
+            <ActionBtn 
+              onClick={() => doAction('rest')} 
+              icon={<Coffee />} 
+              title="完全离线" 
+              sub="恢复体力" 
+              disabled={state.actionsRemaining === 0}
+            />
           </div>
+
+          <button 
+            onClick={nextQuarter}
+            disabled={isLoading || state.actionsRemaining > 0}
+            className={`mt-auto w-full py-5 rounded-3xl font-black text-xl flex items-center justify-center gap-3 transition-all ${isLoading || state.actionsRemaining > 0 ? 'bg-gray-300 text-gray-500' : 'bg-black text-white hover:bg-gray-800 shadow-2xl active:scale-95'}`}
+          >
+            {isLoading ? '结算中...' : '推 进 季 度'} <ArrowRight />
+          </button>
         </aside>
       </div>
 
       {state.isGameOver && (
-        <div className="fixed inset-0 bg-pink-600 z-[100] flex flex-col items-center justify-center text-white p-10 text-center">
-           <GraduationCap size={80} className="mb-6" />
-           <h1 className="text-5xl font-bold mb-4">偶像生涯 毕业</h1>
-           <p className="text-2xl mb-8 opacity-90 max-w-lg">
-             你在舞台上留下了无数汗水。最终人气达到 {state.player.stats.popularity}，累计担任过 {state.player.centerCount} 次中心位。
+        <div className="fixed inset-0 bg-black z-[200] flex flex-col items-center justify-center p-10 text-center animate-in fade-in duration-1000">
+           <GraduationCap size={120} className="text-pink-600 mb-8" />
+           <h1 className="text-7xl font-black text-white mb-6 italic">毕业仪式</h1>
+           <p className="text-2xl text-gray-400 mb-12 max-w-2xl leading-relaxed">
+             你在 AKB48 的光辉岁月结束了。
+             最终人气: <span className="text-pink-500 font-bold">{state.player.stats.popularity}</span><br/>
+             累计 Center: <span className="text-pink-500 font-bold">{state.player.centerCount}</span>
            </p>
            <button 
              onClick={() => window.location.reload()}
-             className="bg-white text-pink-600 px-10 py-4 rounded-full text-xl font-bold shadow-2xl"
+             className="bg-pink-600 text-white px-16 py-6 rounded-full text-3xl font-black shadow-[0_10px_0_0_#9d174d] hover:bg-pink-700 transition-all active:translate-y-2 active:shadow-none"
            >
-             再次启航
+             再续传奇
            </button>
         </div>
       )}
@@ -366,33 +442,33 @@ const App: React.FC = () => {
   );
 };
 
-const StatItem: React.FC<{ label: string; value: number; max?: number; color?: string }> = ({ label, value, max = 100, color = 'bg-pink-500' }) => {
-  const percentage = Math.min(100, (value / max) * 100);
+const StatBar: React.FC<{ label: string; value: number; max?: number; color: string }> = ({ label, value, max = 100, color }) => {
+  const percent = Math.min(100, (value / max) * 100);
   return (
-    <div className="bg-white p-2 rounded border border-pink-100 flex flex-col justify-between h-14">
-      <div className="flex justify-between items-center mb-1">
-        <span className="text-[10px] text-pink-600 font-bold">{label}</span>
-        <span className="text-xs font-bold">{Math.floor(value)}</span>
+    <div className="bg-white p-2 rounded-xl border border-pink-100 shadow-sm flex flex-col justify-between h-16">
+      <div className="flex justify-between items-center text-[10px] font-black text-gray-400 uppercase tracking-tighter">
+        <span>{label}</span>
+        <span className="text-gray-800">{Math.floor(value)}</span>
       </div>
-      <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full ${color} transition-all duration-500`} style={{ width: `${percentage}%` }} />
+      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full ${color} transition-all duration-700 ease-out`} style={{ width: `${percent}%` }} />
       </div>
     </div>
   );
 };
 
-const ActionButton: React.FC<{ onClick: () => void; icon: React.ReactNode; label: string; desc: string; disabled: boolean }> = ({ onClick, icon, label, desc, disabled }) => (
+const ActionBtn: React.FC<{ onClick: () => void; icon: React.ReactNode; title: string; sub: string; disabled: boolean }> = ({ onClick, icon, title, sub, disabled }) => (
   <button 
     onClick={onClick}
     disabled={disabled}
-    className={`w-full p-3 rounded-xl border-2 flex items-start gap-3 transition group ${disabled ? 'border-gray-200 opacity-50 cursor-not-allowed' : 'border-pink-200 bg-white hover:border-pink-600 hover:bg-pink-50'}`}
+    className={`w-full p-4 rounded-2xl border-2 flex items-center gap-4 transition-all group ${disabled ? 'bg-gray-100 border-transparent opacity-40 cursor-not-allowed' : 'bg-white border-gray-100 hover:border-pink-500 hover:shadow-lg active:scale-95'}`}
   >
-    <div className={`p-2 rounded-lg ${disabled ? 'bg-gray-100 text-gray-400' : 'bg-pink-100 text-pink-600 group-hover:bg-pink-600 group-hover:text-white'}`}>
+    <div className={`p-3 rounded-xl transition-colors ${disabled ? 'bg-gray-200' : 'bg-pink-50 text-pink-600 group-hover:bg-pink-600 group-hover:text-white'}`}>
       {icon}
     </div>
     <div className="text-left">
-      <div className="font-bold text-sm text-gray-800">{label}</div>
-      <div className="text-[10px] text-gray-400">{desc}</div>
+      <div className="font-black text-gray-800 text-sm group-hover:text-pink-600 transition-colors">{title}</div>
+      <div className="text-[10px] text-gray-400 font-bold uppercase">{sub}</div>
     </div>
   </button>
 );
